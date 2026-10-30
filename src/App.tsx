@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
+import { useCompetition } from '@/store/useCompetition'
 import { useSession } from '@/store/useSession'
 import { LoginPage } from '@/pages/Login'
 import { DashboardPage } from '@/pages/Dashboard'
@@ -49,6 +50,10 @@ function LoginRoute() {
 }
 
 export function App() {
+  useEffect(() => {
+    void useCompetition.getState().init()
+  }, [])
+
   return (
     <BrowserRouter>
       <ScrollToTop />

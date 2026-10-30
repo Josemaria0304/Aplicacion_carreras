@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Database, Pencil, Plus, RefreshCw, Upload } from 'lucide-react'
+import { Database, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import {
   championship,
   circuits,
@@ -10,6 +10,8 @@ import {
   teams,
   vehicles,
 } from '@/data/seed'
+import { useCompetition } from '@/store/useCompetition'
+import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
 import { Badge, Button, Card, CardHeader, EmptyState, Field, Input, Modal, Textarea } from '@/components/ui'
 
 const catalogues = {
@@ -83,6 +85,8 @@ export function DatabaseManager() {
   const [counts, setCounts] = useState<Partial<Record<Catalogue, number>>>({})
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deletingRecord, setDeletingRecord] = useState<RecordData | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [jsonText, setJsonText] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -135,6 +139,24 @@ export function DatabaseManager() {
     setEditorOpen(true)
   }
 
+  const deleteCurrentRecord = async () => {
+    if (!deletingRecord || !deletingRecord.id) return
+    setIsDeleting(true)
+    setError('')
+    try {
+      await request(`/api/${catalogue}/${encodeURIComponent(String(deletingRecord.id))}`, {
+        method: 'DELETE',
+      })
+      setDeletingRecord(null)
+      await refresh()
+      void useCompetition.getState().syncFromApi()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo eliminar el registro.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const saveRecord = async (event: FormEvent) => {
     event.preventDefault()
     let record: RecordData
@@ -162,6 +184,7 @@ export function DatabaseManager() {
       }
       setEditorOpen(false)
       await refresh()
+      void useCompetition.getState().syncFromApi()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudo guardar el registro.')
     } finally {
@@ -175,6 +198,7 @@ export function DatabaseManager() {
     try {
       await request('/api/bootstrap', { method: 'POST', body: JSON.stringify(demoData) })
       await refresh()
+      void useCompetition.getState().syncFromApi()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudieron cargar los datos iniciales.')
     } finally {
@@ -278,10 +302,21 @@ export function DatabaseManager() {
                     <p className="truncate text-xs font-semibold text-text">{displayName(record)}</p>
                     <p className="num mt-1 truncate font-mono text-[10px] text-dim">{String(record.id ?? '')}</p>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => openExistingRecord(record)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                    Editar
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Button variant="ghost" size="sm" onClick={() => openExistingRecord(record)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                      Editar
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red hover:bg-red/10 hover:text-red"
+                      onClick={() => setDeletingRecord(record)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Eliminar
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -317,6 +352,16 @@ export function DatabaseManager() {
           {error ? <p role="alert" className="text-xs text-red">{error}</p> : null}
         </form>
       </Modal>
+
+      <ConfirmDeleteModal
+        open={Boolean(deletingRecord)}
+        onClose={() => setDeletingRecord(null)}
+        onConfirm={deleteCurrentRecord}
+        title={`Eliminar ${catalogues[catalogue].label.slice(0, -1)}`}
+        itemName={deletingRecord ? displayName(deletingRecord) : ''}
+        itemType="el registro"
+        loading={isDeleting}
+      />
     </div>
   )
 }

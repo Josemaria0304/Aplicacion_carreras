@@ -140,6 +140,33 @@ app.put('/api/:resource/:id', async (request, response, next) => {
   }
 })
 
+app.get('/api/:resource/:id', async (request, response, next) => {
+  const table = Object.hasOwn(resources, request.params.resource) ? resources[request.params.resource] : null
+  if (!table) return response.status(404).json({ error: 'Catálogo no encontrado.' })
+
+  try {
+    const [rows] = await pool.execute(`SELECT data FROM \`${table}\` WHERE id = ?`, [request.params.id])
+    if (!rows.length) return response.status(404).json({ error: 'Registro no encontrado.' })
+    response.json(parseData(rows[0].data))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.delete('/api/:resource/:id', async (request, response, next) => {
+  const table = Object.hasOwn(resources, request.params.resource) ? resources[request.params.resource] : null
+  if (!table) return response.status(404).json({ error: 'Catálogo no encontrado.' })
+
+  try {
+    const [rows] = await pool.execute(`SELECT id FROM \`${table}\` WHERE id = ?`, [request.params.id])
+    if (!rows.length) return response.status(404).json({ error: 'Registro no encontrado.' })
+    await pool.execute(`DELETE FROM \`${table}\` WHERE id = ?`, [request.params.id])
+    response.json({ success: true, id: request.params.id, message: 'Registro eliminado con éxito.' })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.post('/api/bootstrap', async (request, response, next) => {
   const data = request.body
   if (!data || typeof data !== 'object' || Array.isArray(data)) {

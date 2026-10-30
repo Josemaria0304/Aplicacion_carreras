@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -8,15 +9,20 @@ import {
   FileText,
   Fuel,
   Gauge,
+  Pencil,
   Settings2,
   ShieldCheck,
+  Trash2,
   Wrench,
   X,
 } from 'lucide-react'
 import { getDriversByVehicle, getTeam, getVehicle } from '@/lib/data'
 import { cn, downloadJson } from '@/lib/utils'
+import { useCompetition } from '@/store/useCompetition'
 import { useSession } from '@/store/useSession'
 import { CarSilhouette } from '@/components/CarSilhouette'
+import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
+import { VehicleModal } from '@/components/VehicleModal'
 import {
   Badge,
   Button,
@@ -44,6 +50,11 @@ export function VehicleDetailPage() {
   const { vehicleId = '' } = useParams()
   const navigate = useNavigate()
   const pushToast = useSession((state) => state.pushToast)
+  const deleteVehicle = useCompetition((state) => state.deleteVehicle)
+
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const vehicle = getVehicle(vehicleId)
 
@@ -114,6 +125,14 @@ export function VehicleDetailPage() {
         description={`${meta.description} Homologación ${vehicle.homologation} · Inspección ${vehicle.inspectionDate} por ${vehicle.inspector}.`}
         actions={
           <>
+            <Button variant="secondary" size="sm" onClick={() => setIsEditOpen(true)}>
+              <Pencil className="h-3.5 w-3.5" />
+              Editar vehículo
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => setIsDeleteOpen(true)}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Eliminar
+            </Button>
             <Button variant="secondary" size="sm" onClick={handleExport}>
               <Download className="h-3.5 w-3.5" />
               Exportar
@@ -342,6 +361,48 @@ export function VehicleDetailPage() {
           </Card>
         </div>
       </div>
+
+      <VehicleModal
+        open={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        vehicle={vehicle}
+        onSuccess={(updated) => {
+          pushToast({
+            tone: 'success',
+            title: 'Vehículo actualizado',
+            description: `Los datos del chasis #${updated.number} se modificaron con éxito.`,
+          })
+        }}
+      />
+
+      <ConfirmDeleteModal
+        open={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        onConfirm={async () => {
+          setIsDeleting(true)
+          try {
+            await deleteVehicle(vehicle.id)
+            pushToast({
+              tone: 'success',
+              title: 'Vehículo eliminado',
+              description: `El chasis #${vehicle.number} ha sido retirado del parque cerrado.`,
+            })
+            navigate('/garaje')
+          } catch {
+            pushToast({
+              tone: 'error',
+              title: 'Error al eliminar',
+              description: 'No se pudo retirar el vehículo.',
+            })
+          } finally {
+            setIsDeleting(false)
+          }
+        }}
+        title="Retirar Vehículo"
+        itemName={`#${vehicle.number} ${vehicle.make} ${vehicle.model}`}
+        itemType="el vehículo"
+        loading={isDeleting}
+      />
     </div>
   )
 }

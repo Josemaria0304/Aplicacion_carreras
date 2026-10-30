@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   Area,
@@ -21,8 +22,10 @@ import {
   IdCard,
   Mail,
   MapPin,
+  Pencil,
   Phone,
   ShieldCheck,
+  Trash2,
   Trophy,
   UserRound,
   Weight,
@@ -38,8 +41,11 @@ import {
 } from '@/lib/data'
 import { can } from '@/lib/permissions'
 import { cn, downloadJson, formatDate, formatLap } from '@/lib/utils'
+import { useCompetition } from '@/store/useCompetition'
 import { useSession } from '@/store/useSession'
 import { CarSilhouette } from '@/components/CarSilhouette'
+import { ConfirmDeleteModal } from '@/components/ConfirmDeleteModal'
+import { DriverModal } from '@/components/DriverModal'
 import {
   Avatar,
   Badge,
@@ -63,6 +69,11 @@ export function DriverDetailPage() {
   const navigate = useNavigate()
   const role = useSession((state) => state.role)
   const pushToast = useSession((state) => state.pushToast)
+  const deleteDriver = useCompetition((state) => state.deleteDriver)
+
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const driver = getDriver(driverId)
   const team = getTeam(driver.teamId)
@@ -151,9 +162,17 @@ export function DriverDetailPage() {
         description={`${team.name} · ${driver.city}, ${driver.nationality} · ${vehicle.make} ${vehicle.model}`}
         actions={
           <>
+            <Button variant="secondary" size="sm" onClick={() => setIsEditOpen(true)}>
+              <Pencil className="h-3.5 w-3.5" />
+              Editar piloto
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => setIsDeleteOpen(true)}>
+              <Trash2 className="h-3.5 w-3.5" />
+              Eliminar
+            </Button>
             <Button variant="secondary" size="sm" onClick={handleExport}>
               <Download className="h-3.5 w-3.5" />
-              Exportar ficha
+              Exportar
             </Button>
             <Button size="sm" onClick={handleContact}>
               <Mail className="h-3.5 w-3.5" />
@@ -489,6 +508,48 @@ export function DriverDetailPage() {
           </div>
         </div>
       </Card>
+
+      <DriverModal
+        open={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        driver={driver}
+        onSuccess={(updated) => {
+          pushToast({
+            tone: 'success',
+            title: 'Piloto actualizado',
+            description: `Los datos de ${updated.displayName} han sido modificados con éxito.`,
+          })
+        }}
+      />
+
+      <ConfirmDeleteModal
+        open={isDeleteOpen}
+        onClose={() => setIsDeleteOpen(false)}
+        onConfirm={async () => {
+          setIsDeleting(true)
+          try {
+            await deleteDriver(driver.id)
+            pushToast({
+              tone: 'success',
+              title: 'Piloto eliminado',
+              description: `${driver.displayName} fue retirado de la competición.`,
+            })
+            navigate('/pilotos')
+          } catch {
+            pushToast({
+              tone: 'error',
+              title: 'Error al eliminar',
+              description: 'No se pudo eliminar el piloto.',
+            })
+          } finally {
+            setIsDeleting(false)
+          }
+        }}
+        title="Eliminar Piloto"
+        itemName={driver.displayName}
+        itemType="al piloto"
+        loading={isDeleting}
+      />
     </div>
   )
 }

@@ -11,10 +11,10 @@ import {
   YAxis,
 } from 'recharts'
 import { Download, Search, ShieldCheck, Trophy, Users } from 'lucide-react'
-import { championship, drivers, standings, teamStandings, teams } from '@/data/seed'
 import { getDriver, getTeam, pointsByRound } from '@/lib/data'
 import { can } from '@/lib/permissions'
 import { cn, downloadCsv, formatGap } from '@/lib/utils'
+import { useCompetition } from '@/store/useCompetition'
 import { useSession } from '@/store/useSession'
 import {
   Badge,
@@ -55,6 +55,10 @@ function ResultChip({ result }: { result: RaceResult }) {
 export function StandingsPage() {
   const role = useSession((state) => state.role)
   const pushToast = useSession((state) => state.pushToast)
+  const standings = useCompetition((state) => state.standings)
+  const teamStandings = useCompetition((state) => state.teamStandings)
+  const championships = useCompetition((state) => state.championships)
+  const championship = championships[0]
   const [tab, setTab] = useState('drivers')
   const [search, setSearch] = useState('')
 
