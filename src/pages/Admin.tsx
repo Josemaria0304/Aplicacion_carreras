@@ -87,7 +87,7 @@ export function AdminPage() {
           <EmptyState
             icon={<ShieldAlert className="h-5 w-5" />}
             title="No tienes permiso para ver esta sección"
-            description="Cambia tu rol activo a Organizador desde el selector superior para administrar la plataforma."
+            description="El acceso de organizador debe asignarlo el administrador del sistema."
             action={
               <Link to="/">
                 <Button variant="secondary">Volver al dashboard</Button>

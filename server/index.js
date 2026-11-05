@@ -1,10 +1,17 @@
 import 'dotenv/config'
 import express from 'express'
 import mysql from 'mysql2/promise'
-import { randomUUID } from 'node:crypto'
+import { promisify } from 'node:util'
+import {
+  randomBytes,
+  randomUUID,
+  scrypt as scryptCallback,
+  timingSafeEqual,
+} from 'node:crypto'
 
 const app = express()
 const port = Number(process.env.API_PORT || 3001)
+const scrypt = promisify(scryptCallback)
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1',
   port: Number(process.env.DB_PORT || 40628),
@@ -15,6 +22,9 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   charset: 'utf8mb4',
 })
+const sessions = new Map()
+const sessionDurationMs = 12 * 60 * 60 * 1000
+const sessionCookie = 'apex_session'
 
 const resources = {
   teams: 'teams',
@@ -74,6 +84,140 @@ app.get('/api/health', async (_request, response, next) => {
   }
 })
 
+function safeUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    initials: user.name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase(),
+  }
+}
+
+async function hashPassword(password, salt = randomBytes(16).toString('hex')) {
+  const hash = await scrypt(password, salt, 64)
+  return { salt, hash: hash.toString('hex') }
+}
+
+function readSession(request) {
+  const token = request.headers.cookie
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${sessionCookie}=`))
+    ?.slice(sessionCookie.length + 1)
+  if (!token) return null
+
+  const session = sessions.get(token)
+  if (!session || session.expiresAt <= Date.now()) {
+    sessions.delete(token)
+    return null
+  }
+  return { token, ...session }
+}
+
+function setSessionCookie(response, token) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  response.setHeader(
+    'Set-Cookie',
+    `${sessionCookie}=${token}; HttpOnly; SameSite=Lax; Path=/api; Max-Age=${sessionDurationMs / 1000}${secure}`,
+  )
+}
+
+function startSession(response, user) {
+  const token = randomBytes(32).toString('hex')
+  sessions.set(token, { user: safeUser(user), expiresAt: Date.now() + sessionDurationMs })
+  setSessionCookie(response, token)
+  return safeUser(user)
+}
+
+app.post('/api/auth/register', async (request, response, next) => {
+  const name = typeof request.body.name === 'string' ? request.body.name.trim() : ''
+  const email = typeof request.body.email === 'string' ? request.body.email.trim().toLowerCase() : ''
+  const password = typeof request.body.password === 'string' ? request.body.password : ''
+  if (!name || name.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    return response.status(400).json({ error: 'Ingresa un nombre y un correo válidos.' })
+  }
+  if (password.length < 8 || password.length > 128) {
+    return response.status(400).json({ error: 'La contraseña debe tener entre 8 y 128 caracteres.' })
+  }
+
+  try {
+    const { salt, hash } = await hashPassword(password)
+    const user = { id: randomUUID(), name, email, role: 'public' }
+    await pool.execute(
+      'INSERT INTO auth_users (id, name, email, password_salt, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)',
+      [user.id, user.name, user.email, salt, hash, user.role],
+    )
+    response.status(201).json({ user: startSession(response, user) })
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return response.status(409).json({ error: 'Ya existe una cuenta con ese correo.' })
+    }
+    next(error)
+  }
+})
+
+app.post('/api/auth/login', async (request, response, next) => {
+  const email = typeof request.body.email === 'string' ? request.body.email.trim().toLowerCase() : ''
+  const password = typeof request.body.password === 'string' ? request.body.password : ''
+  if (!email || !password || password.length > 128) {
+    return response.status(400).json({ error: 'Correo o contraseña incorrectos.' })
+  }
+
+  try {
+    const [rows] = await pool.execute(
+      'SELECT id, name, email, password_salt, password_hash, role FROM auth_users WHERE email = ? LIMIT 1',
+      [email],
+    )
+    const user = rows[0]
+    if (!user) return response.status(401).json({ error: 'Correo o contraseña incorrectos.' })
+
+    const { hash } = await hashPassword(password, user.password_salt)
+    const actualHash = Buffer.from(hash, 'hex')
+    const storedHash = Buffer.from(user.password_hash, 'hex')
+    if (actualHash.length !== storedHash.length || !timingSafeEqual(actualHash, storedHash)) {
+      return response.status(401).json({ error: 'Correo o contraseña incorrectos.' })
+    }
+
+    response.json({ user: startSession(response, user) })
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/auth/session', (request, response) => {
+  const session = readSession(request)
+  if (!session) return response.status(401).json({ error: 'No hay una sesión activa.' })
+  response.json({ user: session.user })
+})
+
+app.post('/api/auth/logout', (request, response) => {
+  const session = readSession(request)
+  if (session) sessions.delete(session.token)
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  response.setHeader('Set-Cookie', `${sessionCookie}=; HttpOnly; SameSite=Lax; Path=/api; Max-Age=0${secure}`)
+  response.status(204).end()
+})
+
+app.use('/api', (request, response, next) => {
+  const session = readSession(request)
+  if (!session) return response.status(401).json({ error: 'Inicia sesión para continuar.' })
+  request.user = session.user
+  next()
+})
+
+function requireOrganizer(request, response, next) {
+  if (request.user?.role !== 'organizer') {
+    return response.status(403).json({ error: 'Solo el organizador puede modificar los datos.' })
+  }
+  next()
+}
+
 app.get('/api/counts', async (_request, response, next) => {
   try {
     const counts = {}
@@ -99,7 +243,7 @@ app.get('/api/:resource', async (request, response, next) => {
   }
 })
 
-app.post('/api/:resource', async (request, response, next) => {
+app.post('/api/:resource', requireOrganizer, async (request, response, next) => {
   const table = Object.hasOwn(resources, request.params.resource) ? resources[request.params.resource] : null
   if (!table) return response.status(404).json({ error: 'Catálogo no encontrado.' })
   const validationError = validateRecord(request.params.resource, request.body)
@@ -120,7 +264,7 @@ app.post('/api/:resource', async (request, response, next) => {
   }
 })
 
-app.put('/api/:resource/:id', async (request, response, next) => {
+app.put('/api/:resource/:id', requireOrganizer, async (request, response, next) => {
   const table = Object.hasOwn(resources, request.params.resource) ? resources[request.params.resource] : null
   if (!table) return response.status(404).json({ error: 'Catálogo no encontrado.' })
   const validationError = validateRecord(request.params.resource, request.body)
@@ -153,7 +297,7 @@ app.get('/api/:resource/:id', async (request, response, next) => {
   }
 })
 
-app.delete('/api/:resource/:id', async (request, response, next) => {
+app.delete('/api/:resource/:id', requireOrganizer, async (request, response, next) => {
   const table = Object.hasOwn(resources, request.params.resource) ? resources[request.params.resource] : null
   if (!table) return response.status(404).json({ error: 'Catálogo no encontrado.' })
 
@@ -167,7 +311,7 @@ app.delete('/api/:resource/:id', async (request, response, next) => {
   }
 })
 
-app.post('/api/bootstrap', async (request, response, next) => {
+app.post('/api/bootstrap', requireOrganizer, async (request, response, next) => {
   const data = request.body
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return response.status(400).json({ error: 'El contenido inicial no es válido.' })
@@ -220,6 +364,32 @@ app.use((error, _request, response, _next) => {
 
 try {
   await pool.query('SELECT 1')
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_users (
+      id VARCHAR(36) NOT NULL PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      email VARCHAR(254) NOT NULL UNIQUE,
+      password_salt CHAR(32) NOT NULL,
+      password_hash CHAR(128) NOT NULL,
+      role VARCHAR(24) NOT NULL DEFAULT 'public',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase()
+  const adminPassword = process.env.ADMIN_PASSWORD
+  if (adminEmail && adminPassword) {
+    const { salt, hash } = await hashPassword(adminPassword)
+    await pool.execute(
+      `INSERT INTO auth_users (id, name, email, password_salt, password_hash, role)
+       VALUES (?, ?, ?, ?, ?, 'organizer')
+       ON DUPLICATE KEY UPDATE name = VALUES(name), password_salt = VALUES(password_salt),
+         password_hash = VALUES(password_hash), role = 'organizer'`,
+      [randomUUID(), process.env.ADMIN_NAME?.trim() || 'Administrador', adminEmail, salt, hash],
+    )
+    console.log(`Cuenta organizadora configurada para ${adminEmail}`)
+  }
+
   app.listen(port, '127.0.0.1', () => {
     console.log(`API lista en http://127.0.0.1:${port}`)
   })

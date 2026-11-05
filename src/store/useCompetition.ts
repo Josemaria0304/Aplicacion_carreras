@@ -249,14 +249,15 @@ export const useCompetition = create<CompetitionState>()((set, get) => ({
 
     const newStanding: StandingRow = {
       position: state.standings.length + 1,
+      previousPosition: state.standings.length + 1,
       driverId: id,
       teamId,
       points: 0,
-      diff: 0,
       wins: 0,
       podiums: 0,
+      poles: 0,
       fastestLaps: 0,
-      trend: 'equal',
+      results: [0, 0, 0, 0],
     }
 
     const updatedDrivers = [newDriver, ...state.drivers]
@@ -485,9 +486,9 @@ export const useCompetition = create<CompetitionState>()((set, get) => ({
 
     const newTeamStanding: TeamStanding = {
       position: state.teamStandings.length + 1,
+      previousPosition: state.teamStandings.length + 1,
       teamId: id,
       points: 0,
-      diff: 0,
       wins: 0,
       podiums: 0,
     }

@@ -1,27 +1,48 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, type FormEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight, Gauge, LockKeyhole, ShieldCheck, Users } from 'lucide-react'
-import { DEMO_USERS, useSession } from '@/store/useSession'
-import { roleMeta, roleOrder } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
+import { useCompetition } from '@/store/useCompetition'
+import { useSession } from '@/store/useSession'
 import { TrackMap } from '@/components/TrackMap'
 import { Badge } from '@/components/ui'
-import type { Role } from '@/types'
 
 export function LoginPage() {
   const login = useSession((state) => state.login)
-  const isAuthenticated = useSession((state) => state.isAuthenticated)
-  const role = useSession((state) => state.role)
+  const register = useSession((state) => state.register)
   const pushToast = useSession((state) => state.pushToast)
   const navigate = useNavigate()
+  const location = useLocation()
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const handleLogin = (next: Role) => {
-    login(next)
-    pushToast({
-      tone: 'success',
-      title: `Bienvenido, ${DEMO_USERS[next].name}`,
-      description: `Sesión iniciada como ${roleMeta[next].label}.`,
-    })
-    navigate('/')
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setSubmitting(true)
+    try {
+      if (mode === 'register') {
+        await register(name, email, password)
+      } else {
+        await login(email, password)
+      }
+      await useCompetition.getState().init()
+      const user = useSession.getState().user
+      pushToast({
+        tone: 'success',
+        title: `Bienvenido, ${user.name}`,
+        description: mode === 'register' ? 'Tu cuenta ya está lista.' : 'Sesión iniciada correctamente.',
+      })
+      const from = (location.state as { from?: string } | null)?.from || '/'
+      navigate(from, { replace: true })
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'No se pudo completar el acceso.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -45,7 +66,7 @@ export function LoginPage() {
                 <p className="mt-0.5 text-[8px] font-semibold uppercase tracking-[0.32em] text-dim">Race Control</p>
               </div>
             </div>
-            <Badge tone="accent">Demo interactiva</Badge>
+            <Badge tone="accent">Acceso seguro</Badge>
           </div>
 
           <div className="my-12 max-w-xl">
@@ -93,66 +114,89 @@ export function LoginPage() {
         <div className="flex items-center justify-center border-t border-line bg-bg-elevated/80 px-6 py-10 backdrop-blur lg:border-l lg:border-t-0 lg:px-10">
           <div className="w-full max-w-md">
             <div className="mb-6">
-              <p className="label mb-1">Acceso de demostración</p>
-              <h2 className="font-display text-3xl font-semibold uppercase text-text">Elige un rol</h2>
+              <p className="label mb-1">Cuenta Apex</p>
+              <h2 className="font-display text-3xl font-semibold uppercase text-text">
+                {mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}
+              </h2>
               <p className="mt-1 text-xs leading-relaxed text-muted">
-                Cada perfil aplica permisos reales: cambia de rol para ver cómo se adapta la consola.
+                {mode === 'login' ? 'Ingresa tus credenciales para continuar.' : 'Regístrate para acceder a la plataforma.'}
               </p>
             </div>
 
-            <div className="space-y-2">
-              {roleOrder.map((item) => {
-                const meta = roleMeta[item]
-                const user = DEMO_USERS[item]
-                return (
-                  <button
-                    key={item}
-                    onClick={() => handleLogin(item)}
-                    className="group flex w-full items-center gap-3 rounded-xl border border-line bg-surface p-3 text-left transition-all hover:border-line-strong hover:bg-surface-2"
-                  >
-                    <span
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border font-display text-[10px] font-bold"
-                      style={{
-                        color: meta.accent,
-                        borderColor: `${meta.accent}44`,
-                        backgroundColor: `${meta.accent}12`,
-                      }}
-                    >
-                      {user.initials}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-text">{meta.label}</span>
-                        <span className="text-[10px] text-dim">· {user.name}</span>
-                      </span>
-                      <span className="mt-0.5 block text-[11px] leading-snug text-muted">
-                        {meta.description}
-                      </span>
-                    </span>
-                    <ArrowRight className="h-4 w-4 shrink-0 text-dim transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
-                  </button>
-                )
-              })}
-            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === 'register' ? (
+                <label className="block space-y-1.5">
+                  <span className="text-[11px] font-semibold text-muted">Nombre</span>
+                  <input
+                    autoComplete="name"
+                    required
+                    maxLength={100}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-text outline-none transition focus:border-accent"
+                    placeholder="Tu nombre"
+                  />
+                </label>
+              ) : null}
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-semibold text-muted">Correo electrónico</span>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  required
+                  maxLength={254}
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-text outline-none transition focus:border-accent"
+                  placeholder="nombre@correo.com"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-semibold text-muted">Contraseña</span>
+                <input
+                  type="password"
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-sm text-text outline-none transition focus:border-accent"
+                  placeholder="Mínimo 8 caracteres"
+                />
+              </label>
 
-            <div className="mt-5 flex items-center justify-between text-[10px] text-dim">
+              {error ? (
+                <p role="alert" className="rounded-lg border border-red/30 bg-red/10 px-3 py-2 text-xs text-red">
+                  {error}
+                </p>
+              ) : null}
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-bold text-bg transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60"
+              >
+                {submitting ? 'Procesando...' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}
+                {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
+              </button>
+            </form>
+
+            <div className="mt-5 flex items-center justify-between text-[11px] text-dim">
               <span className="inline-flex items-center gap-1.5">
                 <LockKeyhole className="h-3 w-3" />
-                Entorno de demostración · sin contraseña
+                Sesión protegida
               </span>
-              {isAuthenticated ? (
-                <Link to="/" className="font-semibold text-accent hover:underline">
-                  Continuar como {roleMeta[role].label}
-                </Link>
-              ) : null}
-            </div>
-
-            <div className={cn('mt-6 rounded-xl border border-line bg-surface/50 p-3')}>
-              <p className="text-[10px] leading-relaxed text-muted">
-                <span className="font-semibold text-text">Nota:</span> los datos son ficticios y la
-                carrera se simula en el navegador. El live timing se actualiza cada 2 segundos y las
-                sanciones modifican la clasificación al instante.
-              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode(mode === 'login' ? 'register' : 'login')
+                  setError('')
+                }}
+                className="font-semibold text-accent hover:underline"
+              >
+                {mode === 'login' ? 'Crear cuenta' : 'Ya tengo cuenta'}
+              </button>
             </div>
           </div>
         </div>

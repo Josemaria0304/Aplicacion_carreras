@@ -3,50 +3,20 @@ import { persist } from 'zustand/middleware'
 import { appNotifications } from '@/data/seed'
 import type { AppNotification, AppSettings, Role, Toast } from '@/types'
 
-export interface DemoUser {
+export interface SessionUser {
+  id: string
   name: string
   email: string
   initials: string
-  driverId?: string
+  role: Role
 }
 
-export const DEMO_USERS: Record<Role, DemoUser> = {
-  organizer: {
-    name: 'Julia Lima',
-    email: 'julia.lima@apexrace.io',
-    initials: 'JL',
-  },
-  director: {
-    name: 'Ricardo Sosa',
-    email: 'ricardo.sosa@apexrace.io',
-    initials: 'RS',
-  },
-  steward: {
-    name: 'Marta Vega',
-    email: 'marta.vega@apexrace.io',
-    initials: 'MV',
-  },
-  timekeeper: {
-    name: 'Diego Ferrer',
-    email: 'diego.ferrer@apexrace.io',
-    initials: 'DF',
-  },
-  pilot: {
-    name: 'Alex Rossi',
-    email: 'alex.rossi@aurora.team',
-    initials: 'AR',
-    driverId: 'd-rossi',
-  },
-  press: {
-    name: 'Camila Duarte',
-    email: 'camila.duarte@press.apexrace.io',
-    initials: 'CD',
-  },
-  public: {
-    name: 'Invitado',
-    email: 'invitado@apexrace.io',
-    initials: 'IN',
-  },
+const guestUser: SessionUser = {
+  id: '',
+  name: 'Invitado',
+  email: '',
+  initials: 'IN',
+  role: 'public',
 }
 
 const defaultSettings: AppSettings = {
@@ -62,14 +32,16 @@ const defaultSettings: AppSettings = {
 interface SessionStore {
   role: Role
   isAuthenticated: boolean
-  user: DemoUser
+  authReady: boolean
+  user: SessionUser
   notifications: AppNotification[]
   toasts: Toast[]
   sidebarOpen: boolean
   settings: AppSettings
-  login: (role: Role) => void
-  logout: () => void
-  setRole: (role: Role) => void
+  restoreSession: () => Promise<void>
+  login: (email: string, password: string) => Promise<void>
+  register: (name: string, email: string, password: string) => Promise<void>
+  logout: () => Promise<void>
   markAllRead: () => void
   toggleSidebar: () => void
   closeSidebar: () => void
@@ -81,22 +53,59 @@ interface SessionStore {
 export const useSession = create<SessionStore>()(
   persist(
     (set, get) => ({
-      role: 'organizer',
-      isAuthenticated: true,
-      user: DEMO_USERS.organizer,
+      role: 'public',
+      isAuthenticated: false,
+      authReady: false,
+      user: guestUser,
       notifications: appNotifications,
       toasts: [],
       sidebarOpen: false,
       settings: defaultSettings,
-      login: (role) =>
-        set({
-          role,
-          user: DEMO_USERS[role],
-          isAuthenticated: true,
-          sidebarOpen: false,
-        }),
-      logout: () => set({ isAuthenticated: false, sidebarOpen: false }),
-      setRole: (role) => set({ role, user: DEMO_USERS[role] }),
+      restoreSession: async () => {
+        try {
+          const response = await fetch('/api/auth/session')
+          if (!response.ok) throw new Error('No hay una sesión activa.')
+          const { user } = (await response.json()) as { user: SessionUser }
+          set({ role: user.role, user, isAuthenticated: true })
+        } catch {
+          set({ role: 'public', user: guestUser, isAuthenticated: false })
+        } finally {
+          set({ authReady: true })
+        }
+      },
+      login: async (email, password) => {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(typeof body.error === 'string' ? body.error : 'No se pudo iniciar sesión.')
+        }
+        const user = body.user as SessionUser
+        set({ role: user.role, user, isAuthenticated: true, authReady: true, sidebarOpen: false })
+      },
+      register: async (name, email, password) => {
+        const response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email, password }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(typeof body.error === 'string' ? body.error : 'No se pudo crear la cuenta.')
+        }
+        const user = body.user as SessionUser
+        set({ role: user.role, user, isAuthenticated: true, authReady: true, sidebarOpen: false })
+      },
+      logout: async () => {
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' })
+        } finally {
+          set({ role: 'public', user: guestUser, isAuthenticated: false, sidebarOpen: false })
+        }
+      },
       markAllRead: () =>
         set((state) => ({
           notifications: state.notifications.map((notification) => ({
@@ -119,9 +128,6 @@ export const useSession = create<SessionStore>()(
     {
       name: 'apex-session',
       partialize: (state) => ({
-        role: state.role,
-        isAuthenticated: state.isAuthenticated,
-        user: state.user,
         notifications: state.notifications,
         settings: state.settings,
       }),

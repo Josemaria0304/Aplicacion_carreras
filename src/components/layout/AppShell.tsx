@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useRace } from '@/store/useRace'
 import { useSession } from '@/store/useSession'
-import { can, roleMeta, roleOrder } from '@/lib/permissions'
+import { can, roleMeta } from '@/lib/permissions'
 import { cn, formatClock } from '@/lib/utils'
 import { currentEvent, currentSession } from '@/data/seed'
 import { Badge, StatusPill, ToastViewport } from '@/components/ui'
@@ -89,8 +89,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const totalLaps = useRace((state) => state.totalLaps)
   const navigate = useNavigate()
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 
@@ -260,9 +260,7 @@ function NotificationBell() {
 
 function Topbar() {
   const role = useSession((state) => state.role)
-  const setRole = useSession((state) => state.setRole)
   const user = useSession((state) => state.user)
-  const pushToast = useSession((state) => state.pushToast)
   const toggleSidebar = useSession((state) => state.toggleSidebar)
   const location = useLocation()
   const clockMs = useRace((state) => state.clockMs)
@@ -285,15 +283,6 @@ function Topbar() {
     if (path.startsWith('/ajustes')) return ['Sistema', 'Ajustes']
     return ['Race Control']
   })()
-
-  const handleRole = (next: Role) => {
-    setRole(next)
-    pushToast({
-      tone: 'info',
-      title: `Rol activo: ${roleMeta[next].label}`,
-      description: roleMeta[next].description,
-    })
-  }
 
   return (
     <header className="fixed left-0 right-0 top-0 z-30 h-16 border-b border-line bg-bg/90 backdrop-blur lg:left-[248px]">
@@ -336,21 +325,6 @@ function Topbar() {
           </div>
 
           <NotificationBell />
-
-          <div className="hidden items-center gap-2 sm:flex">
-            <select
-              value={role}
-              onChange={(event) => handleRole(event.target.value as Role)}
-              className="h-9 max-w-[150px] rounded-lg border border-line bg-surface-2 px-2 text-[11px] font-medium text-text outline-none focus:border-accent/50"
-              aria-label="Cambiar rol de demostración"
-            >
-              {roleOrder.map((item) => (
-                <option key={item} value={item}>
-                  {roleMeta[item].label}
-                </option>
-              ))}
-            </select>
-          </div>
 
           <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-1.5 py-1">
             <div className="flex h-7 w-7 items-center justify-center rounded-md border border-accent/20 bg-accent/10 font-display text-[10px] font-bold text-accent">

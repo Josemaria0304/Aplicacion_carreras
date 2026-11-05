@@ -58,7 +58,7 @@ Abre `http://localhost:5173`.
    npm run dev
    ```
 
-4. Abre la dirección que indique Vite, normalmente `http://localhost:5173`. Inicia sesión con el rol Organizador y entra a **Administración → Base de datos**. Si la base está vacía, usa **Cargar datos de ejemplo**; después podrás agregar y editar registros de cada catálogo.
+4. Antes de iniciar la API, define `ADMIN_EMAIL` y `ADMIN_PASSWORD` en `.env` con credenciales propias y seguras. Esa cuenta tendrá rol Organizador. Abre la dirección que indique Vite, normalmente `http://localhost:5173`; puedes crear una cuenta de consulta desde **Crear cuenta** o entrar con el organizador. Si la base está vacía, usa **Administración → Base de datos → Cargar datos de ejemplo**.
 
 La API solo escucha en `127.0.0.1` y Vite reenvía `/api` al puerto `3001`. El usuario MySQL configurado debe tener permisos sobre `apex_race_control`. Si la conexión falla, revisa el host, puerto, usuario, contraseña y que hayas ejecutado el esquema. Los cambios de catálogo se guardan como JSON para preservar objetos anidados (por ejemplo, sesiones y resultados). La pantalla permite editar el JSON del registro completo.
 
@@ -70,9 +70,9 @@ npm run preview   # sirve el build
 npm run typecheck # solo TypeScript
 ```
 
-## Demo y roles
+## Login y roles
 
-La autenticación es simulada: en `/login` eliges un rol y entras directamente. El rol se guarda en `localStorage` (`apex-session`) y cambia las acciones visibles y los permisos.
+El registro crea cuentas con rol **Público**. Para crear o actualizar la cuenta **Organizador**, configura `ADMIN_EMAIL` y `ADMIN_PASSWORD` en `.env`; el servidor valida esas credenciales y guarda las contraseñas de usuarios con hash scrypt y salt. La sesión usa una cookie `HttpOnly` y dura 12 horas; al reiniciar la API, las sesiones activas se invalidan. Los endpoints de datos requieren sesión y solo el Organizador puede crear, modificar o eliminar registros.
 
 | Rol | Acceso destacado |
 | --- | --- |
@@ -83,7 +83,7 @@ La autenticación es simulada: en `/login` eliges un rol y entras directamente. 
 | Piloto | Inscripción propia y vista de datos |
 | Prensa / Público | Solo consulta |
 
-Los permisos se definen en `src/lib/permissions.ts` (`can(role, permission)`).
+Los permisos de interfaz se definen en `src/lib/permissions.ts` (`can(role, permission)`). El servidor asigna el rol y no permite cambiarlo desde Ajustes.
 
 ## Funcionalidad
 
@@ -95,7 +95,7 @@ Los permisos se definen en `src/lib/permissions.ts` (`can(role, permission)`).
 - **Eventos** — programa, mapa del circuito, resultados por sesión, oficiales y export CSV.
 - **Clasificación** — pilotos y equipos, resultados por ronda, gráfica de puntos y export CSV.
 - **Administración** — usuarios, invitaciones, matriz de permisos y auditoría (solo Organizador).
-- **Ajustes** — rol activo, preferencias de consola, velocidad de simulación y notificaciones.
+- **Ajustes** — perfil, preferencias de consola, velocidad de simulación y notificaciones.
 
 ### Simulación de carrera
 
@@ -125,5 +125,5 @@ El proyecto es una SPA con `BrowserRouter`. En un hosting estático necesita ree
 
 - Datos, pilotos, equipos y circuitos son ficticios.
 - La base MySQL guarda los catálogos editados desde Administración. Los demás módulos aún conservan los datos de demostración del cliente.
-- El inicio de sesión y los roles continúan siendo simulados; no publiques la API ni uses datos sensibles sin agregar autenticación real al backend.
+- Para producción, sirve la API sobre HTTPS y configura variables de entorno fuertes. Netlify/Vercel en este repositorio solo publican la SPA; el backend Express y MySQL deben desplegarse por separado y la URL de API debe configurarse para ese entorno.
 - Los exports CSV/JSON se generan en el cliente mediante blobs.

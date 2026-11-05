@@ -10,7 +10,7 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react'
-import { roleMeta, roleOrder } from '@/lib/permissions'
+import { roleMeta } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/store/useSession'
 import {
@@ -18,11 +18,9 @@ import {
   Button,
   Card,
   CardHeader,
-  Field,
   PageHeader,
-  Select,
 } from '@/components/ui'
-import type { AppSettings, Role } from '@/types'
+import type { AppSettings } from '@/types'
 
 function Toggle({
   checked,
@@ -65,7 +63,6 @@ function Toggle({
 export function SettingsPage() {
   const role = useSession((state) => state.role)
   const user = useSession((state) => state.user)
-  const setRole = useSession((state) => state.setRole)
   const settings = useSession((state) => state.settings)
   const updateSettings = useSession((state) => state.updateSettings)
   const logout = useSession((state) => state.logout)
@@ -83,17 +80,8 @@ export function SettingsPage() {
     })
   }
 
-  const handleRole = (next: Role) => {
-    setRole(next)
-    pushToast({
-      tone: 'info',
-      title: `Rol activo: ${roleMeta[next].label}`,
-      description: roleMeta[next].description,
-    })
-  }
-
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/login')
   }
 
@@ -131,7 +119,7 @@ export function SettingsPage() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Perfil activo" subtitle="Sesión de demostración" icon={<UserRound className="h-4 w-4" />} />
+          <CardHeader title="Perfil activo" subtitle="Cuenta autenticada" icon={<UserRound className="h-4 w-4" />} />
           <div className="p-4">
             <div className="flex items-center gap-3">
               <div
@@ -151,18 +139,6 @@ export function SettingsPage() {
                   {meta.label}
                 </Badge>
               </div>
-            </div>
-
-            <div className="mt-4">
-              <Field label="Rol activo" hint={meta.description}>
-                <Select value={role} onChange={(event) => handleRole(event.target.value as Role)}>
-                  {roleOrder.map((item) => (
-                    <option key={item} value={item}>
-                      {roleMeta[item].label} — {roleMeta[item].permissions.length} permisos
-                    </option>
-                  ))}
-                </Select>
-              </Field>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-1.5">
@@ -278,11 +254,11 @@ export function SettingsPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Seguridad de la sesión" subtitle="Entorno de demostración" icon={<ShieldCheck className="h-4 w-4" />} />
+          <CardHeader title="Seguridad de la sesión" subtitle="Autenticación del servidor" icon={<ShieldCheck className="h-4 w-4" />} />
           <div className="p-4">
             <div className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
-              No se envían datos a ningún servidor. La autenticación es simulada y el rol se guarda en
-              <span className="font-mono text-text"> localStorage</span>.
+              La contraseña se valida en el servidor y no se guarda en este navegador. El acceso de cada cuenta
+              depende del rol asignado por la organización.
             </div>
             <div className="mt-3 space-y-2">
               <Button variant="secondary" className="w-full" onClick={() => navigate('/administracion')}>

@@ -30,7 +30,12 @@ function ScrollToTop() {
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const isAuthenticated = useSession((state) => state.isAuthenticated)
+  const authReady = useSession((state) => state.authReady)
   const location = useLocation()
+
+  if (!authReady) {
+    return <div className="flex min-h-screen items-center justify-center bg-bg text-sm text-muted">Verificando sesión...</div>
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
@@ -41,7 +46,11 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 function LoginRoute() {
   const isAuthenticated = useSession((state) => state.isAuthenticated)
+  const authReady = useSession((state) => state.authReady)
 
+  if (!authReady) {
+    return <div className="flex min-h-screen items-center justify-center bg-bg text-sm text-muted">Verificando sesión...</div>
+  }
   if (isAuthenticated) {
     return <Navigate to="/" replace />
   }
@@ -51,7 +60,13 @@ function LoginRoute() {
 
 export function App() {
   useEffect(() => {
-    void useCompetition.getState().init()
+    const initialize = async () => {
+      await useSession.getState().restoreSession()
+      if (useSession.getState().isAuthenticated) {
+        await useCompetition.getState().init()
+      }
+    }
+    void initialize()
   }, [])
 
   return (

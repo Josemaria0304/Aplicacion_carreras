@@ -55,6 +55,8 @@ function ResultChip({ result }: { result: RaceResult }) {
 export function StandingsPage() {
   const role = useSession((state) => state.role)
   const pushToast = useSession((state) => state.pushToast)
+  const drivers = useCompetition((state) => state.drivers)
+  const teams = useCompetition((state) => state.teams)
   const standings = useCompetition((state) => state.standings)
   const teamStandings = useCompetition((state) => state.teamStandings)
   const championships = useCompetition((state) => state.championships)
@@ -76,7 +78,7 @@ export function StandingsPage() {
         driver.nationality.toLowerCase().includes(term)
       )
     })
-  }, [search])
+  }, [search, standings])
 
   const leader = standings[0]
   const chartData = standings.slice(0, 10).map((row) => {
