@@ -68,6 +68,7 @@ export function DriverDetailPage() {
   const { driverId = '' } = useParams()
   const navigate = useNavigate()
   const role = useSession((state) => state.role)
+  const user = useSession((state) => state.user)
   const pushToast = useSession((state) => state.pushToast)
   const deleteDriver = useCompetition((state) => state.deleteDriver)
 
@@ -80,6 +81,7 @@ export function DriverDetailPage() {
   const vehicle = getVehicle(driver.vehicleId)
   const standing = getStanding(driver.id)
   const canViewMedical = can(role, 'medical:view')
+  const canManageDrivers = can(role, 'admin:users')
 
   if (!driver.id || driver.id !== driverId) {
     return (
@@ -93,6 +95,18 @@ export function DriverDetailPage() {
               Volver a pilotos
             </Button>
           }
+        />
+      </Card>
+    )
+  }
+
+  if (role === 'pilot' && user.driverId !== driverId) {
+    return (
+      <Card>
+        <EmptyState
+          title="Ficha restringida"
+          description="Solo puedes consultar la ficha vinculada a tu cuenta."
+          action={<Button onClick={() => navigate('/pilotos')}>Volver a mi ficha</Button>}
         />
       </Card>
     )
@@ -162,18 +176,24 @@ export function DriverDetailPage() {
         description={`${team.name} · ${driver.city}, ${driver.nationality} · ${vehicle.make} ${vehicle.model}`}
         actions={
           <>
-            <Button variant="secondary" size="sm" onClick={() => setIsEditOpen(true)}>
-              <Pencil className="h-3.5 w-3.5" />
-              Editar piloto
-            </Button>
-            <Button variant="danger" size="sm" onClick={() => setIsDeleteOpen(true)}>
-              <Trash2 className="h-3.5 w-3.5" />
-              Eliminar
-            </Button>
-            <Button variant="secondary" size="sm" onClick={handleExport}>
-              <Download className="h-3.5 w-3.5" />
-              Exportar
-            </Button>
+            {canManageDrivers ? (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setIsEditOpen(true)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                  Editar piloto
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => setIsDeleteOpen(true)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Eliminar
+                </Button>
+              </>
+            ) : null}
+            {role !== 'pilot' ? (
+              <Button variant="secondary" size="sm" onClick={handleExport}>
+                <Download className="h-3.5 w-3.5" />
+                Exportar
+              </Button>
+            ) : null}
             <Button size="sm" onClick={handleContact}>
               <Mail className="h-3.5 w-3.5" />
               Contactar

@@ -19,6 +19,7 @@ import type {
   TeamStanding,
   Vehicle,
 } from '@/types'
+import { useSession } from '@/store/useSession'
 
 const STORAGE_KEY = 'apex_competition_store_v2'
 
@@ -122,6 +123,11 @@ export const useCompetition = create<CompetitionState>()((set, get) => ({
     try {
       await apiRequest('/api/health')
       set({ isApiConnected: true })
+      if (useSession.getState().role === 'pilot') {
+        const drivers = await apiRequest<Driver[]>('/api/drivers')
+        set({ drivers, isApiConnected: true })
+        return
+      }
       // If connected, sync data from API
       await get().syncFromApi()
     } catch {

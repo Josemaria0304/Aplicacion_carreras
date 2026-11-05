@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import { Download, Search, ShieldCheck, Trophy, Users } from 'lucide-react'
+import { championship as defaultChampionship } from '@/data/seed'
 import { getDriver, getTeam, pointsByRound } from '@/lib/data'
 import { can } from '@/lib/permissions'
 import { cn, downloadCsv, formatGap } from '@/lib/utils'
@@ -60,7 +61,7 @@ export function StandingsPage() {
   const standings = useCompetition((state) => state.standings)
   const teamStandings = useCompetition((state) => state.teamStandings)
   const championships = useCompetition((state) => state.championships)
-  const championship = championships[0]
+  const championship = championships[0] ?? defaultChampionship
   const [tab, setTab] = useState('drivers')
   const [search, setSearch] = useState('')
 
@@ -81,6 +82,9 @@ export function StandingsPage() {
   }, [search, standings])
 
   const leader = standings[0]
+  const runnerUp = standings[1]
+  const leadingTeam = teamStandings[0]
+  const secondTeam = teamStandings[1]
   const chartData = standings.slice(0, 10).map((row) => {
     const driver = getDriver(row.driverId)
     const team = getTeam(row.teamId)
@@ -147,15 +151,15 @@ export function StandingsPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Líder del campeonato"
-          value={getDriver(leader.driverId).displayName}
-          detail={`${leader.points} pts · ${leader.wins} victorias`}
+          value={leader ? getDriver(leader.driverId).displayName : '—'}
+          detail={leader ? `${leader.points} pts · ${leader.wins} victorias` : 'Sin resultados todavía'}
           icon={<Trophy className="h-4 w-4" />}
           accent="accent"
         />
         <StatCard
           label="Ventaja del líder"
-          value={`${leader.points - standings[1].points} pts`}
-          detail={`Sobre ${getDriver(standings[1].driverId).displayName}`}
+          value={leader && runnerUp ? `${leader.points - runnerUp.points} pts` : '—'}
+          detail={runnerUp ? `Sobre ${getDriver(runnerUp.driverId).displayName}` : 'Se necesitan dos pilotos'}
           icon={<Trophy className="h-4 w-4" />}
           accent="sky"
         />
@@ -169,7 +173,7 @@ export function StandingsPage() {
         <StatCard
           label="Equipos en lucha"
           value={teams.length}
-          detail={`${teamStandings[0].points} pts el primero`}
+          detail={leadingTeam ? `${leadingTeam.points} pts el primero` : 'Sin resultados de equipos'}
           icon={<ShieldCheck className="h-4 w-4" />}
           accent="amber"
         />
@@ -311,7 +315,7 @@ export function StandingsPage() {
                       const driver = getDriver(row.driverId)
                       const team = getTeam(row.teamId)
                       const delta = row.previousPosition - row.position
-                      const gap = leader.points - row.points
+                      const gap = (leader?.points ?? row.points) - row.points
                       return (
                         <tr key={row.driverId} className="border-b border-line/60 transition-colors last:border-0 hover:bg-surface-2/50">
                           <td className="px-4 py-3">
@@ -390,7 +394,7 @@ export function StandingsPage() {
               {teamStandings.map((row) => {
                 const team = getTeam(row.teamId)
                 const teamDrivers = drivers.filter((driver) => driver.teamId === team.id)
-                const max = teamStandings[0].points
+                const max = Math.max(leadingTeam?.points ?? row.points, 1)
                 return (
                   <div key={team.id} className="px-4 py-3">
                     <div className="flex items-center gap-3">
@@ -430,14 +434,16 @@ export function StandingsPage() {
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-[11px] text-muted">Mayor puntuación</span>
-                  <span className="text-xs font-semibold" style={{ color: getTeam(teamStandings[0].teamId).color }}>
-                    {getTeam(teamStandings[0].teamId).name}
-                  </span>
+                  {leadingTeam ? (
+                    <span className="text-xs font-semibold" style={{ color: getTeam(leadingTeam.teamId).color }}>
+                      {getTeam(leadingTeam.teamId).name}
+                    </span>
+                  ) : <span className="text-xs text-dim">Sin datos</span>}
                 </div>
                 <div className="flex items-center justify-between px-4 py-2.5">
                   <span className="text-[11px] text-muted">Ventaja</span>
                   <span className="num text-xs font-semibold text-text">
-                    {teamStandings[0].points - teamStandings[1].points} pts
+                    {leadingTeam && secondTeam ? `${leadingTeam.points - secondTeam.points} pts` : '—'}
                   </span>
                 </div>
               </div>

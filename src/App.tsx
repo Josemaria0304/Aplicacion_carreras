@@ -31,6 +31,8 @@ function ScrollToTop() {
 function RequireAuth({ children }: { children: ReactNode }) {
   const isAuthenticated = useSession((state) => state.isAuthenticated)
   const authReady = useSession((state) => state.authReady)
+  const role = useSession((state) => state.role)
+  const user = useSession((state) => state.user)
   const location = useLocation()
 
   if (!authReady) {
@@ -41,18 +43,27 @@ function RequireAuth({ children }: { children: ReactNode }) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
 
+  if (role === 'pilot') {
+    const ownProfile = user.driverId ? `/pilotos/${user.driverId}` : '/pilotos'
+    if (location.pathname !== '/pilotos' && location.pathname !== ownProfile) {
+      return <Navigate to={ownProfile} replace />
+    }
+  }
+
   return <>{children}</>
 }
 
 function LoginRoute() {
   const isAuthenticated = useSession((state) => state.isAuthenticated)
   const authReady = useSession((state) => state.authReady)
+  const role = useSession((state) => state.role)
+  const user = useSession((state) => state.user)
 
   if (!authReady) {
     return <div className="flex min-h-screen items-center justify-center bg-bg text-sm text-muted">Verificando sesión...</div>
   }
   if (isAuthenticated) {
-    return <Navigate to="/" replace />
+    return <Navigate to={role === 'pilot' ? (user.driverId ? `/pilotos/${user.driverId}` : '/pilotos') : '/'} replace />
   }
 
   return <LoginPage />

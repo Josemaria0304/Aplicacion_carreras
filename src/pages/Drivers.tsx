@@ -13,6 +13,7 @@ import {
   Users,
 } from 'lucide-react'
 import { getDriver, getTeam, getVehicle } from '@/lib/data'
+import { can } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useCompetition } from '@/store/useCompetition'
 import { useSession } from '@/store/useSession'
@@ -36,11 +37,22 @@ type CategoryFilter = (typeof categories)[number]
 type SortKey = 'position' | 'points' | 'name' | 'number'
 
 export function DriversPage() {
+  const role = useSession((state) => state.role)
+  const user = useSession((state) => state.user)
   const pushToast = useSession((state) => state.pushToast)
   const drivers = useCompetition((state) => state.drivers)
   const teams = useCompetition((state) => state.teams)
   const standings = useCompetition((state) => state.standings)
   const deleteDriver = useCompetition((state) => state.deleteDriver)
+  const canManageDrivers = can(role, 'admin:users')
+  const visibleDrivers = role === 'pilot'
+    ? drivers.filter((driver) => driver.id === user.driverId)
+    : drivers
+  const visibleTeamIds = new Set(visibleDrivers.map((driver) => driver.teamId))
+  const visibleTeams = role === 'pilot' ? teams.filter((team) => visibleTeamIds.has(team.id)) : teams
+  const visibleCategories = role === 'pilot'
+    ? categories.filter((item) => item === 'Todas' || visibleDrivers.some((driver) => driver.category === item))
+    : categories
 
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('Todas')
@@ -54,7 +66,7 @@ export function DriversPage() {
   const [isDeleting, setIsDeleting] = useState(false)
 
   const ranked = useMemo(() => {
-    return drivers.map((driver) => {
+    return visibleDrivers.map((driver) => {
       const row =
         standings.find((s) => s.driverId === driver.id) ?? {
           position: 99,
@@ -76,7 +88,7 @@ export function DriversPage() {
         vehicle,
       }
     })
-  }, [drivers, standings])
+  }, [visibleDrivers, standings])
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -162,23 +174,27 @@ export function DriversPage() {
           </Badge>
         }
         title="Pilotos y Corredores"
-        description="Fichas deportivas, licencias, equipos y gestión integral de pilotos inscritos en el campeonato."
+        description={role === 'pilot'
+          ? 'Tu ficha deportiva, resultados y datos del equipo asignado.'
+          : 'Fichas deportivas, licencias, equipos y gestión integral de pilotos inscritos en el campeonato.'}
         actions={
-          <Button size="sm" onClick={handleOpenCreate}>
-            <UserPlus className="h-3.5 w-3.5" />
-            Inscribir Piloto
-          </Button>
+          canManageDrivers ? (
+            <Button size="sm" onClick={handleOpenCreate}>
+              <UserPlus className="h-3.5 w-3.5" />
+              Inscribir Piloto
+            </Button>
+          ) : null
         }
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Pilotos inscritos" value={drivers.length} icon={<Users className="h-4 w-4" />} accent="accent" />
+        <StatCard label="Pilotos inscritos" value={visibleDrivers.length} icon={<Users className="h-4 w-4" />} accent="accent" />
         <StatCard
           label="Equipos representados"
-          value={new Set(drivers.map((d) => d.teamId)).size}
+          value={visibleTeamIds.size}
           icon={<ShieldCheck className="h-4 w-4" />}
           accent="sky"
-          detail={`${teams.length} estructuras en total`}
+          detail={role === 'pilot' ? `${visibleTeams.length} equipo asignado` : `${teams.length} estructuras en total`}
         />
         <StatCard
           label="Puntos repartidos"
@@ -189,7 +205,7 @@ export function DriversPage() {
         />
         <StatCard
           label="Categorías activas"
-          value={new Set(drivers.map((d) => d.category)).size}
+          value={new Set(visibleDrivers.map((d) => d.category)).size}
           icon={<Filter className="h-4 w-4" />}
           accent="amber"
           detail="GT3 Pro · Pro-Am · GT4"
@@ -208,7 +224,7 @@ export function DriversPage() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {categories.map((item) => (
+            {visibleCategories.map((item) => (
               <button
                 key={item}
                 onClick={() => setCategory(item)}
@@ -229,7 +245,7 @@ export function DriversPage() {
               aria-label="Filtrar por equipo"
             >
               <option value="all">Todos los equipos</option>
-              {teams.map((team) => (
+              {visibleTeams.map((team) => (
                 <option key={team.id} value={team.id}>
                   {team.name}
                 </option>
@@ -254,14 +270,16 @@ export function DriversPage() {
         <Card>
           <EmptyState
             icon={<Search className="h-5 w-5" />}
-            title="Sin pilotos que coincidan"
-            description="No se encontraron pilotos con los filtros seleccionados."
-            action={
+            title={role === 'pilot' && !user.driverId ? 'Ficha sin asignar' : 'Sin pilotos que coincidan'}
+            description={role === 'pilot' && !user.driverId
+              ? 'Contacta al administrador para asociar tu cuenta con tu ficha de piloto.'
+              : 'No se encontraron pilotos con los filtros seleccionados.'}
+            action={canManageDrivers ? (
               <Button size="sm" onClick={handleOpenCreate}>
                 <Plus className="h-4 w-4" />
                 Inscribir Nuevo Piloto
               </Button>
-            }
+            ) : undefined}
           />
         </Card>
       ) : (
@@ -287,25 +305,26 @@ export function DriversPage() {
                   <span className="text-xl" title={driver.nationality}>
                     {driver.flag}
                   </span>
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-1 opacity-75 transition-opacity group-hover:opacity-100">
-                    <button
-                      onClick={(e) => handleOpenEdit(e, driver)}
-                      className="rounded-md border border-line bg-surface-2 p-1.5 text-muted transition-colors hover:border-accent/50 hover:bg-surface-3 hover:text-accent"
-                      title="Modificar piloto"
-                      aria-label="Modificar piloto"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                    <button
-                      onClick={(e) => handleOpenDelete(e, driver)}
-                      className="rounded-md border border-line bg-surface-2 p-1.5 text-muted transition-colors hover:border-red/40 hover:bg-red/10 hover:text-red"
-                      title="Eliminar piloto"
-                      aria-label="Eliminar piloto"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
+                  {canManageDrivers ? (
+                    <div className="flex items-center gap-1 opacity-75 transition-opacity group-hover:opacity-100">
+                      <button
+                        onClick={(e) => handleOpenEdit(e, driver)}
+                        className="rounded-md border border-line bg-surface-2 p-1.5 text-muted transition-colors hover:border-accent/50 hover:bg-surface-3 hover:text-accent"
+                        title="Modificar piloto"
+                        aria-label="Modificar piloto"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={(e) => handleOpenDelete(e, driver)}
+                        className="rounded-md border border-line bg-surface-2 p-1.5 text-muted transition-colors hover:border-red/40 hover:bg-red/10 hover:text-red"
+                        title="Eliminar piloto"
+                        aria-label="Eliminar piloto"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -350,7 +369,7 @@ export function DriversPage() {
         </div>
       )}
 
-      <Card className="p-4">
+      {canManageDrivers ? <Card className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="label">Administración de Parrilla</p>
@@ -364,7 +383,7 @@ export function DriversPage() {
             Nuevo Registro
           </Button>
         </div>
-      </Card>
+      </Card> : null}
 
       {/* Modal para Insertar / Modificar Piloto */}
       <DriverModal

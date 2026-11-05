@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS auth_users (
   password_salt CHAR(32) NOT NULL,
   password_hash CHAR(128) NOT NULL,
   role VARCHAR(24) NOT NULL DEFAULT 'public',
+  driver_id VARCHAR(64) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

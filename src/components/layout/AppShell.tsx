@@ -88,6 +88,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const currentLap = useRace((state) => state.currentLap)
   const totalLaps = useRace((state) => state.totalLaps)
   const navigate = useNavigate()
+  const sidebarGroups: NavGroup[] = role === 'pilot'
+    ? [{ label: 'Mi cuenta', items: [{ to: user.driverId ? `/pilotos/${user.driverId}` : '/pilotos', label: 'Mi ficha', icon: Users }] }]
+    : navGroups
 
   const handleLogout = async () => {
     await logout()
@@ -100,7 +103,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <Logo />
       </div>
 
-      <div className="border-b border-line px-3 py-3">
+      {role !== 'pilot' ? <div className="border-b border-line px-3 py-3">
         <NavLink
           to={`/eventos/${currentEvent.id}`}
           onClick={onNavigate}
@@ -126,10 +129,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             />
           </div>
         </NavLink>
-      </div>
+      </div> : null}
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {navGroups.map((group) => {
+        {sidebarGroups.map((group) => {
           const items = group.items.filter((item) => !item.admin || can(role, 'admin:users'))
           if (!items.length) return null
           return (
@@ -309,22 +312,22 @@ function Topbar() {
         </div>
 
         <div className="flex items-center gap-2">
-          <NavLink
+          {role !== 'pilot' ? <NavLink
             to="/live"
             className="hidden items-center gap-2 rounded-lg border border-red/25 bg-red/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red transition-colors hover:bg-red/15 sm:flex"
           >
             <span className="h-1.5 w-1.5 rounded-full bg-red live-dot" />
             En vivo
-          </NavLink>
-          <div className="hidden items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 md:flex">
+          </NavLink> : null}
+          {role !== 'pilot' ? <div className="hidden items-center gap-2 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 md:flex">
             <Timer className="h-3.5 w-3.5 text-dim" />
             <span className="num font-mono text-xs font-medium text-text">{formatClock(clockMs)}</span>
             <span className="text-[10px] text-dim">
               V{currentLap}/{totalLaps}
             </span>
-          </div>
+          </div> : null}
 
-          <NotificationBell />
+          {role !== 'pilot' ? <NotificationBell /> : null}
 
           <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-1.5 py-1">
             <div className="flex h-7 w-7 items-center justify-center rounded-md border border-accent/20 bg-accent/10 font-display text-[10px] font-bold text-accent">
@@ -343,7 +346,11 @@ function Topbar() {
 function MobileNav() {
   const location = useLocation()
   const toggleSidebar = useSession((state) => state.toggleSidebar)
-  const items = [
+  const role = useSession((state) => state.role)
+  const user = useSession((state) => state.user)
+  const items = role === 'pilot' ? [
+    { to: user.driverId ? `/pilotos/${user.driverId}` : '/pilotos', label: 'Mi ficha', icon: Users },
+  ] : [
     { to: '/', label: 'Inicio', icon: LayoutDashboard },
     { to: '/live', label: 'Live', icon: Timer },
     { to: '/clasificacion', label: 'Tabla', icon: Trophy },

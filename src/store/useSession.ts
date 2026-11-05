@@ -9,6 +9,7 @@ export interface SessionUser {
   email: string
   initials: string
   role: Role
+  driverId?: string | null
 }
 
 const guestUser: SessionUser = {

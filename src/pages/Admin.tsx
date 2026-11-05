@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Check,
@@ -16,6 +16,7 @@ import { auditLog, users as seedUsers } from '@/data/seed'
 import { can, roleMeta, roleOrder } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/store/useSession'
+import { useCompetition } from '@/store/useCompetition'
 import { DatabaseManager } from '@/components/DatabaseManager'
 import {
   Avatar,
@@ -34,6 +35,14 @@ import {
 } from '@/components/ui'
 import type { Permission, Role, UserAccount } from '@/types'
 
+type RegisteredAccount = {
+  id: string
+  name: string
+  email: string
+  role: Role
+  driverId: string | null
+}
+
 const permissionLabels: Record<Permission, string> = {
   'event:manage': 'Gestionar eventos',
   'race:control': 'Control de carrera',
@@ -51,6 +60,133 @@ const statusMeta = {
   active: { label: 'Activo', tone: 'green' as const },
   invited: { label: 'Invitado', tone: 'sky' as const },
   suspended: { label: 'Suspendido', tone: 'red' as const },
+}
+
+function RegisteredAccountsPanel() {
+  const drivers = useCompetition((state) => state.drivers)
+  const pushToast = useSession((state) => state.pushToast)
+  const [accounts, setAccounts] = useState<RegisteredAccount[]>([])
+  const [loading, setLoading] = useState(true)
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  const refresh = async () => {
+    setError('')
+    try {
+      const response = await fetch('/api/auth/users')
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : 'No se pudieron cargar las cuentas.')
+      setAccounts(body as RegisteredAccount[])
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudieron cargar las cuentas.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void refresh()
+  }, [])
+
+  const updateAccount = (id: string, patch: Partial<RegisteredAccount>) => {
+    setAccounts((current) => current.map((account) => account.id === id ? { ...account, ...patch } : account))
+  }
+
+  const saveAccount = async (account: RegisteredAccount) => {
+    if (account.role === 'pilot' && !account.driverId) {
+      setError(`Selecciona el piloto asociado a ${account.email}.`)
+      return
+    }
+    setSavingId(account.id)
+    setError('')
+    try {
+      const response = await fetch(`/api/auth/users/${encodeURIComponent(account.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: account.role, driverId: account.driverId }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : 'No se pudo guardar la cuenta.')
+      pushToast({
+        tone: 'success',
+        title: 'Cuenta actualizada',
+        description: account.role === 'pilot'
+          ? `${account.email} quedó vinculada al piloto seleccionado. Debe iniciar sesión de nuevo para aplicar el cambio.`
+          : `Se actualizó el rol de ${account.email}. Debe iniciar sesión de nuevo para aplicar el cambio.`,
+      })
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo guardar la cuenta.')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Cuentas registradas" subtitle="Asigna el rol y vincula cada piloto con su ficha" icon={<Users className="h-4 w-4" />} />
+      {error ? <p role="alert" className="mx-4 mb-3 rounded-lg border border-red/25 bg-red/10 px-3 py-2 text-xs text-red">{error}</p> : null}
+      {loading ? (
+        <p className="px-4 py-5 text-xs text-muted">Cargando cuentas…</p>
+      ) : accounts.length === 0 ? (
+        <EmptyState title="No hay cuentas registradas" description="Cuando un usuario se registre aparecerá aquí para asignarle un rol." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[780px] text-left">
+            <thead>
+              <tr className="border-b border-line text-[9px] uppercase tracking-[0.16em] text-dim">
+                <th className="px-4 py-2 font-semibold">Cuenta</th>
+                <th className="px-3 py-2 font-semibold">Rol</th>
+                <th className="px-3 py-2 font-semibold">Ficha de piloto</th>
+                <th className="px-4 py-2 text-right font-semibold">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accounts.map((account) => (
+                <tr key={account.id} className="border-b border-line/60 last:border-0">
+                  <td className="px-4 py-3">
+                    <p className="text-xs font-semibold text-text">{account.name}</p>
+                    <p className="text-[10px] text-dim">{account.email}</p>
+                  </td>
+                  <td className="px-3 py-3">
+                    <Select
+                      aria-label={`Rol para ${account.email}`}
+                      value={account.role}
+                      onChange={(event) => updateAccount(account.id, {
+                        role: event.target.value as Role,
+                        driverId: event.target.value === 'pilot' ? account.driverId : null,
+                      })}
+                      className="h-9 text-xs"
+                    >
+                      {roleOrder.map((item) => <option key={item} value={item}>{roleMeta[item].label}</option>)}
+                    </Select>
+                  </td>
+                  <td className="px-3 py-3">
+                    {account.role === 'pilot' ? (
+                      <Select
+                        aria-label={`Piloto para ${account.email}`}
+                        value={account.driverId ?? ''}
+                        onChange={(event) => updateAccount(account.id, { driverId: event.target.value || null })}
+                        className="h-9 text-xs"
+                      >
+                        <option value="">Seleccionar piloto</option>
+                        {drivers.map((driver) => <option key={driver.id} value={driver.id}>{driver.displayName} · #{driver.number}</option>)}
+                      </Select>
+                    ) : <span className="text-xs text-dim">No aplica</span>}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Button size="sm" variant="secondary" disabled={savingId === account.id} onClick={() => void saveAccount(account)}>
+                      {savingId === account.id ? 'Guardando…' : 'Guardar'}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
 }
 
 export function AdminPage() {
@@ -185,6 +321,8 @@ export function AdminPage() {
       />
 
       {tab === 'users' ? (
+        <div className="space-y-4">
+        <RegisteredAccountsPanel />
         <Card>
           <CardHeader
             title="Cuentas de la plataforma"
@@ -260,6 +398,7 @@ export function AdminPage() {
             </div>
           )}
         </Card>
+        </div>
       ) : null}
 
       {tab === 'roles' ? (

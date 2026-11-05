@@ -90,6 +90,7 @@ function safeUser(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    driverId: user.driver_id ?? user.driverId ?? null,
     initials: user.name
       .split(/\s+/)
       .slice(0, 2)
@@ -171,7 +172,7 @@ app.post('/api/auth/login', async (request, response, next) => {
 
   try {
     const [rows] = await pool.execute(
-      'SELECT id, name, email, password_salt, password_hash, role FROM auth_users WHERE email = ? LIMIT 1',
+      'SELECT id, name, email, password_salt, password_hash, role, driver_id FROM auth_users WHERE email = ? LIMIT 1',
       [email],
     )
     const user = rows[0]
@@ -218,8 +219,61 @@ function requireOrganizer(request, response, next) {
   next()
 }
 
+app.get('/api/auth/users', requireOrganizer, async (_request, response, next) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, name, email, role, driver_id FROM auth_users ORDER BY created_at DESC',
+    )
+    response.json(rows.map(safeUser))
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.patch('/api/auth/users/:id', requireOrganizer, async (request, response, next) => {
+  const { role } = request.body
+  const driverId = typeof request.body.driverId === 'string' ? request.body.driverId : null
+  const allowedRoles = ['organizer', 'director', 'steward', 'timekeeper', 'pilot', 'press', 'public']
+  if (!allowedRoles.includes(role)) {
+    return response.status(400).json({ error: 'El rol seleccionado no es válido.' })
+  }
+  if (role === 'pilot' && !driverId) {
+    return response.status(400).json({ error: 'Selecciona el piloto asociado a esta cuenta.' })
+  }
+
+  try {
+    if (role === 'pilot') {
+      const [drivers] = await pool.execute('SELECT id FROM drivers WHERE id = ? LIMIT 1', [driverId])
+      if (!drivers.length) return response.status(400).json({ error: 'El piloto seleccionado no existe en la base de datos.' })
+    }
+
+    const [result] = await pool.execute(
+      'UPDATE auth_users SET role = ?, driver_id = ? WHERE id = ?',
+      [role, role === 'pilot' ? driverId : null, request.params.id],
+    )
+    if (!result.affectedRows) return response.status(404).json({ error: 'La cuenta no existe.' })
+
+    for (const [token, session] of sessions) {
+      if (session.user.id === request.params.id) sessions.delete(token)
+    }
+    const [rows] = await pool.execute(
+      'SELECT id, name, email, role, driver_id FROM auth_users WHERE id = ? LIMIT 1',
+      [request.params.id],
+    )
+    response.json(safeUser(rows[0]))
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/counts', async (_request, response, next) => {
   try {
+    if (_request.user.role === 'pilot') {
+      if (!_request.user.driverId) return response.json({ drivers: 0 })
+      const [rows] = await pool.execute('SELECT COUNT(*) AS total FROM drivers WHERE id = ?', [_request.user.driverId])
+      return response.json({ drivers: Number(rows[0].total) })
+    }
+
     const counts = {}
     for (const [resource, table] of Object.entries(resources)) {
       const [rows] = await pool.query(`SELECT COUNT(*) AS total FROM \`${table}\``)
@@ -234,10 +288,18 @@ app.get('/api/counts', async (_request, response, next) => {
 app.get('/api/:resource', async (request, response, next) => {
   const table = Object.hasOwn(resources, request.params.resource) ? resources[request.params.resource] : null
   if (!table) return response.status(404).json({ error: 'Catálogo no encontrado.' })
+  if (request.user.role === 'pilot' && request.params.resource !== 'drivers') {
+    return response.status(403).json({ error: 'Tu cuenta solo puede consultar tu propia ficha de piloto.' })
+  }
 
   try {
     const [rows] = await pool.query(`SELECT data FROM \`${table}\` ORDER BY created_at, id`)
-    response.json(rows.map((row) => parseData(row.data)))
+    const records = rows.map((row) => parseData(row.data))
+    response.json(
+      request.user.role === 'pilot'
+        ? records.filter((record) => record.id === request.user.driverId)
+        : records,
+    )
   } catch (error) {
     next(error)
   }
@@ -287,6 +349,12 @@ app.put('/api/:resource/:id', requireOrganizer, async (request, response, next) 
 app.get('/api/:resource/:id', async (request, response, next) => {
   const table = Object.hasOwn(resources, request.params.resource) ? resources[request.params.resource] : null
   if (!table) return response.status(404).json({ error: 'Catálogo no encontrado.' })
+  if (
+    request.user.role === 'pilot' &&
+    (request.params.resource !== 'drivers' || request.params.id !== request.user.driverId)
+  ) {
+    return response.status(403).json({ error: 'Tu cuenta solo puede consultar tu propia ficha de piloto.' })
+  }
 
   try {
     const [rows] = await pool.execute(`SELECT data FROM \`${table}\` WHERE id = ?`, [request.params.id])
@@ -372,9 +440,14 @@ try {
       password_salt CHAR(32) NOT NULL,
       password_hash CHAR(128) NOT NULL,
       role VARCHAR(24) NOT NULL DEFAULT 'public',
+      driver_id VARCHAR(64) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `)
+  const [userColumns] = await pool.query("SHOW COLUMNS FROM auth_users LIKE 'driver_id'")
+  if (!userColumns.length) {
+    await pool.query('ALTER TABLE auth_users ADD COLUMN driver_id VARCHAR(64) NULL')
+  }
 
   const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase()
   const adminPassword = process.env.ADMIN_PASSWORD

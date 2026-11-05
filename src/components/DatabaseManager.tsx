@@ -126,6 +126,9 @@ export function DatabaseManager() {
   }, [records, search])
 
   const isEmptyDatabase = Object.values(counts).length > 0 && Object.values(counts).every((count) => count === 0)
+  const missingDemoDrivers = catalogue === 'drivers'
+    ? drivers.filter((driver) => !records.some((record) => record.id === driver.id))
+    : []
 
   const openNewRecord = () => {
     setEditingId(null)
@@ -206,6 +209,22 @@ export function DatabaseManager() {
     }
   }
 
+  const loadMissingDrivers = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      for (const driver of missingDemoDrivers) {
+        await request('/api/drivers', { method: 'POST', body: JSON.stringify(driver) })
+      }
+      await refresh()
+      await useCompetition.getState().syncFromApi()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudieron cargar los pilotos faltantes.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card className="p-4 sm:p-5">
@@ -229,6 +248,12 @@ export function DatabaseManager() {
               <Button size="sm" variant="secondary" onClick={loadDemoData} disabled={saving}>
                 <Upload className="h-3.5 w-3.5" />
                 Cargar datos de ejemplo
+              </Button>
+            ) : null}
+            {!isEmptyDatabase && missingDemoDrivers.length > 0 ? (
+              <Button size="sm" variant="secondary" onClick={loadMissingDrivers} disabled={saving}>
+                <Upload className="h-3.5 w-3.5" />
+                {saving ? 'Cargando pilotos…' : `Cargar pilotos faltantes (${missingDemoDrivers.length})`}
               </Button>
             ) : null}
             <Button size="sm" variant="secondary" onClick={() => void refresh()} disabled={loading}>
